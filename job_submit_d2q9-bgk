@@ -17,8 +17,6 @@ options="input_128x128.params obstacles_128x128.dat"
 ### You should not have to change anything below this line ####
 ###############################################################
 
-#! change the working directory (default is home directory)
-
 echo Running on host `hostname`
 echo Time is `date`
 echo Directory is `pwd`
