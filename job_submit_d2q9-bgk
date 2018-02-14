@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash 
 
 #SBATCH --job-name d2q9-bgk
 #SBATCH --nodes 1
@@ -7,12 +7,31 @@
 #SBATCH --partition teaching
 #SBATCH --output d2q9-bgk.out
 
+#! application name
+application="d2q9-bgk"
+
+#! Run options for the application
+options="input_128x128.params obstacles_128x128.dat"
+
+###############################################################
+### You should not have to change anything below this line ####
+###############################################################
+
+#! change the working directory (default is home directory)
+
+cd $PBS_O_WORKDIR
+
 echo Running on host `hostname`
 echo Time is `date`
 echo Directory is `pwd`
 echo Slurm job ID is $SLURM_JOB_ID
 echo This job runs on the following machines:
 echo `echo $SLURM_JOB_NODELIST | uniq`
+ 
+#! Create a machine file for MPI
+cat $SLURM_JOB_NODELIST > machine.file.$SLURM_JOB_ID
 
-#! Run the executable
-./d2q9-bgk input_128x128.params obstacles_128x128.dat
+numnodes=`wc $SLURM_JOB_NODELIST | awk '{ print $1 }'`
+
+#! Run the parallel MPI executable (nodes*ppn)
+mpirun -np $numnodes -machinefile machine.file.$SLURM_JOB_ID $application $options
