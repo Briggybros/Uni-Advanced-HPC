@@ -25,9 +25,10 @@ echo This job runs on the following machines:
 echo `echo $SLURM_JOB_NODELIST | uniq`
  
 #! Create a machine file for MPI
-echo $SLURM_JOB_NODELIST > machine.file.$SLURM_JOB_ID
+# echo $SLURM_JOB_NODELIST > machine.file.$SLURM_JOB_ID
 
-numnodes=`wc machine.file.$SLURM_JOB_ID | awk '{ print $1 }'`
+# numnodes=`wc machine.file.$SLURM_JOB_ID | awk '{ print $1 }'`
 
 #! Run the parallel MPI executable (nodes*ppn)
-mpirun -np $numnodes -machinefile machine.file.$SLURM_JOB_ID $application $options
+# mpirun -np $numnodes -machinefile machine.file.$SLURM_JOB_ID $application $options
+mpirun $application $options
