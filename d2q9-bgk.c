@@ -56,6 +56,8 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
+#include "mpi.h"
+
 #define NSPEEDS  9
 #define FINALSTATEFILE "final_state.dat"
 #define AVVELSFILE "av_vels.dat"
@@ -141,39 +143,68 @@ int main(int argc, char* argv[]) {
     obstaclefile = argv[2];
   }
 
-  /* initialise our data structures and load values from file */
-  initialise(paramfile, obstaclefile, &params, &cells, &tmp_cells, &obstacles, &av_vels);
-
-  /* iterate for maxIters timesteps */
-  gettimeofday(&timstr, NULL);
-  tic = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
-
-  for (int tt = 0; tt < params.maxIters; tt++) {
-    timestep(params, cells, tmp_cells, obstacles);
-    av_vels[tt] = av_velocity(params, cells, obstacles);
-    #ifdef DEBUG
-      printf("==timestep: %d==\n", tt);
-      printf("av velocity: %.12E\n", av_vels[tt]);
-      printf("tot density: %.12E\n", total_density(params, cells));
-    #endif
+  MPI_Init(argc, argv);
+  MPI_Initialized(&flag);
+  if (flag != TRUE) {
+    MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
   }
 
-  gettimeofday(&timstr, NULL);
-  toc = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
-  getrusage(RUSAGE_SELF, &ru);
-  timstr = ru.ru_utime;
-  usrtim = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
-  timstr = ru.ru_stime;
-  systim = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
+   /* determine the hostname */
+  MPI_Get_processor_name(hostname,&strlen);
 
-  /* write final values and free memory */
-  printf("==done==\n");
-  printf("Reynolds number:\t\t%.12E\n", calc_reynolds(params, cells, obstacles));
-  printf("Elapsed time:\t\t\t%.6lf (s)\n", toc - tic);
-  printf("Elapsed user CPU time:\t\t%.6lf (s)\n", usrtim);
-  printf("Elapsed system CPU time:\t%.6lf (s)\n", systim);
-  write_values(params, cells, obstacles, av_vels);
-  finalise(&params, &cells, &tmp_cells, &obstacles, &av_vels);
+  /* 
+  ** determine the SIZE of the group of processes associated with
+  ** the 'communicator'.  MPI_COMM_WORLD is the default communicator
+  ** consisting of all the processes in the launched MPI 'job'
+  */
+  MPI_Comm_size( MPI_COMM_WORLD, &size );
+  
+  /* determine the RANK of the current process [0:SIZE-1] */
+  MPI_Comm_rank( MPI_COMM_WORLD, &rank );
+
+  /* 
+  ** make use of these values in our print statement
+  ** note that we are assuming that all processes can
+  ** write to the screen
+  */
+  printf("Hello, world; from host %s: process %d of %d\n", hostname, rank, size);
+
+  /* finialise the MPI enviroment */
+  MPI_Finalize();
+
+  /* initialise our data structures and load values from file */
+  // initialise(paramfile, obstaclefile, &params, &cells, &tmp_cells, &obstacles, &av_vels);
+
+  // /* iterate for maxIters timesteps */
+  // gettimeofday(&timstr, NULL);
+  // tic = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
+
+  // for (int tt = 0; tt < params.maxIters; tt++) {
+  //   timestep(params, cells, tmp_cells, obstacles);
+  //   av_vels[tt] = av_velocity(params, cells, obstacles);
+  //   #ifdef DEBUG
+  //     printf("==timestep: %d==\n", tt);
+  //     printf("av velocity: %.12E\n", av_vels[tt]);
+  //     printf("tot density: %.12E\n", total_density(params, cells));
+  //   #endif
+  // }
+
+  // gettimeofday(&timstr, NULL);
+  // toc = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
+  // getrusage(RUSAGE_SELF, &ru);
+  // timstr = ru.ru_utime;
+  // usrtim = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
+  // timstr = ru.ru_stime;
+  // systim = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
+
+  // /* write final values and free memory */
+  // printf("==done==\n");
+  // printf("Reynolds number:\t\t%.12E\n", calc_reynolds(params, cells, obstacles));
+  // printf("Elapsed time:\t\t\t%.6lf (s)\n", toc - tic);
+  // printf("Elapsed user CPU time:\t\t%.6lf (s)\n", usrtim);
+  // printf("Elapsed system CPU time:\t%.6lf (s)\n", systim);
+  // write_values(params, cells, obstacles, av_vels);
+  // finalise(&params, &cells, &tmp_cells, &obstacles, &av_vels);
 
   return EXIT_SUCCESS;
 }
