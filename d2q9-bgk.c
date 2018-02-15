@@ -150,7 +150,7 @@ int main(int argc, char* argv[]) {
   enum bool {FALSE,TRUE}; /* enumerated type: false = 0, true = 1 */  
   char hostname[MPI_MAX_PROCESSOR_NAME];  /* character array to hold hostname running process */
 
-  MPI_Init(argc, argv);
+  MPI_Init(&argc, &argv);
   MPI_Initialized(&flag);
   if (flag != TRUE) {
     MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
