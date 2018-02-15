@@ -122,42 +122,36 @@ void usage(const char* exe);
 ** initialise, timestep loop, finalise
 */
 int main(int argc, char* argv[]) {
-  // char*    paramfile = NULL;    /* name of the input parameter file */
-  // char*    obstaclefile = NULL; /* name of a the input obstacle file */
-  // t_param  params;              /* struct to hold parameter values */
-  // t_speed* cells     = NULL;    /* grid containing fluid densities */
-  // t_speed* tmp_cells = NULL;    /* scratch space */
-  // int*     obstacles = NULL;    /* grid indicating which cells are blocked */
-  // float* av_vels   = NULL;      /* a record of the av. velocity computed for each timestep */
-  // struct timeval timstr;        /* structure to hold elapsed time */
-  // struct rusage ru;             /* structure to hold CPU time--system and user */
-  // double tic, toc;              /* floating point numbers to calculate elapsed wallclock time */
-  // double usrtim;                /* floating point number to record elapsed user CPU time */
-  // double systim;                /* floating point number to record elapsed system CPU time */
+  char*    paramfile = NULL;    /* name of the input parameter file */
+  char*    obstaclefile = NULL; /* name of a the input obstacle file */
+  t_param  params;              /* struct to hold parameter values */
+  t_speed* cells     = NULL;    /* grid containing fluid densities */
+  t_speed* tmp_cells = NULL;    /* scratch space */
+  int*     obstacles = NULL;    /* grid indicating which cells are blocked */
+  float* av_vels   = NULL;      /* a record of the av. velocity computed for each timestep */
+  struct timeval timstr;        /* structure to hold elapsed time */
+  struct rusage ru;             /* structure to hold CPU time--system and user */
+  double tic, toc;              /* floating point numbers to calculate elapsed wallclock time */
+  double usrtim;                /* floating point number to record elapsed user CPU time */
+  double systim;                /* floating point number to record elapsed system CPU time */
+  int rank;                     /* 'rank' of process among it's cohort */ 
+  int size;                     /* size of cohort, i.e. num processes started */
+  int flag;                     /* for checking whether MPI_Init() has been called */
+  enum bool {FALSE,TRUE};       /* enumerated type: false = 0, true = 1 */
 
   /* parse the command line */
-  // if (argc != 3) {
-  //   usage(argv[0]);
-  // } else {
-  //   paramfile = argv[1];
-  //   obstaclefile = argv[2];
-  // }
-
-  int rank;               /* 'rank' of process among it's cohort */ 
-  int size;               /* size of cohort, i.e. num processes started */
-  int flag;               /* for checking whether MPI_Init() has been called */
-  int strlen;             /* length of a character array */
-  enum bool {FALSE,TRUE}; /* enumerated type: false = 0, true = 1 */  
-  char hostname[MPI_MAX_PROCESSOR_NAME];  /* character array to hold hostname running process */
+  if (argc != 3) {
+    usage(argv[0]);
+  } else {
+    paramfile = argv[1];
+    obstaclefile = argv[2];
+  }
 
   MPI_Init(&argc, &argv);
   MPI_Initialized(&flag);
   if (flag != TRUE) {
     MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
   }
-
-   /* determine the hostname */
-  MPI_Get_processor_name(hostname,&strlen);
 
   /* 
   ** determine the SIZE of the group of processes associated with
@@ -169,49 +163,39 @@ int main(int argc, char* argv[]) {
   /* determine the RANK of the current process [0:SIZE-1] */
   MPI_Comm_rank( MPI_COMM_WORLD, &rank );
 
-  /* 
-  ** make use of these values in our print statement
-  ** note that we are assuming that all processes can
-  ** write to the screen
-  */
-  printf("Hello, world; from host %s: process %d of %d\n", hostname, rank, size);
-
-  /* finialise the MPI enviroment */
-  MPI_Finalize();
-
   /* initialise our data structures and load values from file */
-  // initialise(paramfile, obstaclefile, &params, &cells, &tmp_cells, &obstacles, &av_vels);
+  initialise(paramfile, obstaclefile, &params, &cells, &tmp_cells, &obstacles, &av_vels);
 
-  // /* iterate for maxIters timesteps */
-  // gettimeofday(&timstr, NULL);
-  // tic = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
+  /* iterate for maxIters timesteps */
+  gettimeofday(&timstr, NULL);
+  tic = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
 
-  // for (int tt = 0; tt < params.maxIters; tt++) {
-  //   timestep(params, cells, tmp_cells, obstacles);
-  //   av_vels[tt] = av_velocity(params, cells, obstacles);
-  //   #ifdef DEBUG
-  //     printf("==timestep: %d==\n", tt);
-  //     printf("av velocity: %.12E\n", av_vels[tt]);
-  //     printf("tot density: %.12E\n", total_density(params, cells));
-  //   #endif
-  // }
+  for (int tt = 0; tt < params.maxIters; tt++) {
+    timestep(params, cells, tmp_cells, obstacles);
+    av_vels[tt] = av_velocity(params, cells, obstacles);
+    #ifdef DEBUG
+      printf("==timestep: %d==\n", tt);
+      printf("av velocity: %.12E\n", av_vels[tt]);
+      printf("tot density: %.12E\n", total_density(params, cells));
+    #endif
+  }
 
-  // gettimeofday(&timstr, NULL);
-  // toc = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
-  // getrusage(RUSAGE_SELF, &ru);
-  // timstr = ru.ru_utime;
-  // usrtim = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
-  // timstr = ru.ru_stime;
-  // systim = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
+  gettimeofday(&timstr, NULL);
+  toc = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
+  getrusage(RUSAGE_SELF, &ru);
+  timstr = ru.ru_utime;
+  usrtim = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
+  timstr = ru.ru_stime;
+  systim = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
 
-  // /* write final values and free memory */
-  // printf("==done==\n");
-  // printf("Reynolds number:\t\t%.12E\n", calc_reynolds(params, cells, obstacles));
-  // printf("Elapsed time:\t\t\t%.6lf (s)\n", toc - tic);
-  // printf("Elapsed user CPU time:\t\t%.6lf (s)\n", usrtim);
-  // printf("Elapsed system CPU time:\t%.6lf (s)\n", systim);
-  // write_values(params, cells, obstacles, av_vels);
-  // finalise(&params, &cells, &tmp_cells, &obstacles, &av_vels);
+  /* write final values and free memory */
+  printf("==done==\n");
+  printf("Reynolds number:\t\t%.12E\n", calc_reynolds(params, cells, obstacles));
+  printf("Elapsed time:\t\t\t%.6lf (s)\n", toc - tic);
+  printf("Elapsed user CPU time:\t\t%.6lf (s)\n", usrtim);
+  printf("Elapsed system CPU time:\t%.6lf (s)\n", systim);
+  write_values(params, cells, obstacles, av_vels);
+  finalise(&params, &cells, &tmp_cells, &obstacles, &av_vels);
 
   return EXIT_SUCCESS;
 }
@@ -611,6 +595,9 @@ int finalise(const t_param* params, t_speed** cells_ptr, t_speed** tmp_cells_ptr
 
   free(*av_vels_ptr);
   *av_vels_ptr = NULL;
+
+  /* finialise the MPI enviroment */
+  MPI_Finalize();
 
   return EXIT_SUCCESS;
 }
