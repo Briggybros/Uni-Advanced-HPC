@@ -56,7 +56,7 @@
 #include <sys/time.h>
 #include <time.h>
 
-#include <mpi/mpi.h>
+#include "mpi.h"
 
 #define NSPEEDS 9
 #define FINALSTATEFILE "final_state.dat"
