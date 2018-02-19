@@ -86,7 +86,7 @@ typedef struct {
  * densities */
 int initialise(const char* paramfile, const char* obstaclefile, t_param* params,
                t_speed** cells_ptr, t_speed** tmp_cells_ptr,
-               int** obstacles_ptr, float** av_vels_ptr);
+               int** obstacles_ptr, float** av_vels_ptr, int rank, int size);
 
 /*
 ** The main calculation methods.
@@ -172,7 +172,7 @@ int main(int argc, char* argv[]) {
 
   /* initialise our data structures and load values from file */
   initialise(paramfile, obstaclefile, &params, &cells, &tmp_cells, &obstacles,
-             &av_vels);
+             &av_vels, rank, size);
 
   /* iterate for maxIters timesteps */
   gettimeofday(&timstr, NULL);
@@ -462,7 +462,7 @@ float av_velocity(const t_param params, t_speed* cells, int* obstacles) {
 
 int initialise(const char* paramfile, const char* obstaclefile, t_param* params,
                t_speed** cells_ptr, t_speed** tmp_cells_ptr,
-               int** obstacles_ptr, float** av_vels_ptr) {
+               int** obstacles_ptr, float** av_vels_ptr, int rank, int size) {
   char message[1024]; /* message buffer */
   FILE* fp;           /* file pointer */
   int xx, yy;         /* generic array indices */
