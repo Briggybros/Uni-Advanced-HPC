@@ -86,7 +86,7 @@ typedef struct {
  * densities */
 int initialise(const char* paramfile, const char* obstaclefile, t_param* params,
                t_speed** cells_ptr, t_speed** tmp_cells_ptr,
-               int** obstacles_ptr, float** av_vels_ptr, int rank, int size);
+               int** obstacles_ptr, float** av_vels_ptr);
 
 /*
 ** The main calculation methods.
@@ -94,13 +94,17 @@ int initialise(const char* paramfile, const char* obstaclefile, t_param* params,
 ** accelerate_flow(), propagate(), rebound() & collision()
 */
 int timestep(const t_param params, t_speed* cells, t_speed* tmp_cells,
-             int* obstacles);
-int accelerate_flow(const t_param params, t_speed* cells, int* obstacles);
-int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells);
+             int* obstacles, int domain_start, int domain_size);
+int accelerate_flow(const t_param params, t_speed* cells, int* obstacles,
+                    int domain_start, int domain_size);
+int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells,
+              domain_start, domain_size);
 int rebound(const t_param params, t_speed* cells, t_speed* tmp_cells,
-            int* obstacles);
+            int* obstacles, int domain_start, int domain_size);
 int collision(const t_param params, t_speed* cells, t_speed* tmp_cells,
-              int* obstacles);
+              int* obstacles, int domain_start, int domain_size);
+int halo_exchange(t_speed* cells, int domain_start, int domain_size, int rank,
+                  int size);
 int write_values(const t_param params, t_speed* cells, int* obstacles,
                  float* av_vels);
 
@@ -143,7 +147,9 @@ int main(int argc, char* argv[]) {
   double systim; /* floating point number to record elapsed system CPU time */
   int rank;      /* 'rank' of process among it's cohort */
   int size;      /* size of cohort, i.e. num processes started */
-  int flag;      /* for checking whether MPI_Init() has been called */
+  int domain_start; /* the starting y index of this process's domain */
+  int domain_size;  /* the length of this process's domain */
+  int flag;         /* for checking whether MPI_Init() has been called */
   enum bool { FALSE, TRUE }; /* enumerated type: false = 0, true = 1 */
 
   /* parse the command line */
@@ -172,14 +178,22 @@ int main(int argc, char* argv[]) {
 
   /* initialise our data structures and load values from file */
   initialise(paramfile, obstaclefile, &params, &cells, &tmp_cells, &obstacles,
-             &av_vels, rank, size);
+             &av_vels);
+
+  /* calculate the size of the domain for this process */
+  domain_start = rank * (params.ny / size);
+  domain_size = (rank + 1) * (params.ny / size);
+  if (rank == size - 1) {
+    domain_size += params.ny % size;
+  }
 
   /* iterate for maxIters timesteps */
   gettimeofday(&timstr, NULL);
   tic = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
 
   for (int tt = 0; tt < params.maxIters; tt++) {
-    timestep(params, cells, tmp_cells, obstacles);
+    timestep(params, cells, tmp_cells, obstacles, domain_start, domain_size);
+    halo_exchange(cells, params.nx, domain_start, domain_size, rank, size);
     av_vels[tt] = av_velocity(params, cells, obstacles);
 #ifdef DEBUG
     printf("==timestep: %d==\n", tt);
@@ -210,15 +224,16 @@ int main(int argc, char* argv[]) {
 }
 
 int timestep(const t_param params, t_speed* cells, t_speed* tmp_cells,
-             int* obstacles) {
-  accelerate_flow(params, cells, obstacles);
-  propagate(params, cells, tmp_cells);
-  rebound(params, cells, tmp_cells, obstacles);
-  collision(params, cells, tmp_cells, obstacles);
+             int* obstacles, int domain_start, int domain_size) {
+  accelerate_flow(params, cells, obstacles domain_start, domain_size);
+  propagate(params, cells, tmp_cells, domain_start, domain_size);
+  rebound(params, cells, tmp_cells, obstacles, domain_start, domain_size);
+  collision(params, cells, tmp_cells, obstacles, domain_start, domain_size);
   return EXIT_SUCCESS;
 }
 
-int accelerate_flow(const t_param params, t_speed* cells, int* obstacles) {
+int accelerate_flow(const t_param params, t_speed* cells, int* obstacles,
+                    int domain_start, int domain_size) {
   /* compute weighting factors */
   float w1 = params.density * params.accel / 9.f;
   float w2 = params.density * params.accel / 36.f;
@@ -226,30 +241,33 @@ int accelerate_flow(const t_param params, t_speed* cells, int* obstacles) {
   /* modify the 2nd row of the grid */
   int jj = params.ny - 2;
 
-  for (int ii = 0; ii < params.nx; ii++) {
-    /* if the cell is not occupied and
-    ** we don't send a negative density */
-    if (!obstacles[ii + jj * params.nx] &&
-        (cells[ii + jj * params.nx].speeds[3] - w1) > 0.f &&
-        (cells[ii + jj * params.nx].speeds[6] - w2) > 0.f &&
-        (cells[ii + jj * params.nx].speeds[7] - w2) > 0.f) {
-      /* increase 'east-side' densities */
-      cells[ii + jj * params.nx].speeds[1] += w1;
-      cells[ii + jj * params.nx].speeds[5] += w2;
-      cells[ii + jj * params.nx].speeds[8] += w2;
-      /* decrease 'west-side' densities */
-      cells[ii + jj * params.nx].speeds[3] -= w1;
-      cells[ii + jj * params.nx].speeds[6] -= w2;
-      cells[ii + jj * params.nx].speeds[7] -= w2;
+  if (jj >= domain_start && jj < domain_start + domain_size) {
+    for (int ii = 0; ii < params.nx; ii++) {
+      /* if the cell is not occupied and
+      ** we don't send a negative density */
+      if (!obstacles[ii + jj * params.nx] &&
+          (cells[ii + jj * params.nx].speeds[3] - w1) > 0.f &&
+          (cells[ii + jj * params.nx].speeds[6] - w2) > 0.f &&
+          (cells[ii + jj * params.nx].speeds[7] - w2) > 0.f) {
+        /* increase 'east-side' densities */
+        cells[ii + jj * params.nx].speeds[1] += w1;
+        cells[ii + jj * params.nx].speeds[5] += w2;
+        cells[ii + jj * params.nx].speeds[8] += w2;
+        /* decrease 'west-side' densities */
+        cells[ii + jj * params.nx].speeds[3] -= w1;
+        cells[ii + jj * params.nx].speeds[6] -= w2;
+        cells[ii + jj * params.nx].speeds[7] -= w2;
+      }
     }
   }
 
   return EXIT_SUCCESS;
 }
 
-int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells) {
+int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells,
+              domain_start, domain_size) {
   /* loop over _all_ cells */
-  for (int jj = 0; jj < params.ny; jj++) {
+  for (int jj = domain_start; jj < domain_size; jj++) {
     for (int ii = 0; ii < params.nx; ii++) {
       /* determine indices of axis-direction neighbours
       ** respecting periodic boundary conditions (wrap around) */
@@ -285,9 +303,9 @@ int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells) {
 }
 
 int rebound(const t_param params, t_speed* cells, t_speed* tmp_cells,
-            int* obstacles) {
+            int* obstacles, int domain_start, int domain_size) {
   /* loop over the cells in the grid */
-  for (int jj = 0; jj < params.ny; jj++) {
+  for (int jj = domain_start; jj < domain_size; jj++) {
     for (int ii = 0; ii < params.nx; ii++) {
       /* if the cell contains an obstacle */
       if (obstacles[jj * params.nx + ii]) {
@@ -317,7 +335,7 @@ int rebound(const t_param params, t_speed* cells, t_speed* tmp_cells,
 }
 
 int collision(const t_param params, t_speed* cells, t_speed* tmp_cells,
-              int* obstacles) {
+              int* obstacles, int domain_start, int domain_size) {
   const float c_sq = 1.f / 3.f; /* square of speed of sound */
   const float w0 = 4.f / 9.f;   /* weighting factor */
   const float w1 = 1.f / 9.f;   /* weighting factor */
@@ -327,7 +345,7 @@ int collision(const t_param params, t_speed* cells, t_speed* tmp_cells,
   ** NB the collision step is called after
   ** the propagate step and so values of interest
   ** are in the scratch-space grid */
-  for (int jj = 0; jj < params.ny; jj++) {
+  for (int jj = domain_start; jj < domain_size; jj++) {
     for (int ii = 0; ii < params.nx; ii++) {
       /* don't consider occupied cells */
       if (!obstacles[ii + jj * params.nx]) {
@@ -414,6 +432,14 @@ int collision(const t_param params, t_speed* cells, t_speed* tmp_cells,
   return EXIT_SUCCESS;
 }
 
+int halo_exchange(t_speed* cells, int cols, int domain_start, int domain_size, int rank,
+                  int size) {
+  t_speed *sendbuf;       /* buffer to hold values to send */
+  t_speed *recvbuf;       /* buffer to hold received values */
+
+  sendbuf = (t_speed*)malloc(sizeof(t_speed*) * cols);
+}
+
 float av_velocity(const t_param params, t_speed* cells, int* obstacles) {
   int tot_cells = 0; /* no. of cells used in calculation */
   float tot_u;       /* accumulated magnitudes of velocity for each cell */
@@ -462,7 +488,7 @@ float av_velocity(const t_param params, t_speed* cells, int* obstacles) {
 
 int initialise(const char* paramfile, const char* obstaclefile, t_param* params,
                t_speed** cells_ptr, t_speed** tmp_cells_ptr,
-               int** obstacles_ptr, float** av_vels_ptr, int rank, int size) {
+               int** obstacles_ptr, float** av_vels_ptr) {
   char message[1024]; /* message buffer */
   FILE* fp;           /* file pointer */
   int xx, yy;         /* generic array indices */

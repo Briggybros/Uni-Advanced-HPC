@@ -1,6 +1,10 @@
 {
     "files.associations": {
         "time.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "array": "c",
+        "initializer_list": "c",
+        "utility": "c",
+        "type_traits": "c"
     }
 }
