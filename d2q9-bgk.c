@@ -103,7 +103,7 @@ int rebound(int ii, int jj, const t_param params, t_speed* cells,
             t_speed* tmp_cells, int* obstacles);
 int collision(int ii, int jj, const t_param params, t_speed* cells,
               t_speed* tmp_cells, int* obstacles);
-int halo_exchange(t_speed* cells, int domain_start, int domain_size, int rank,
+int halo_exchange(t_speed* cells, int rows, int domain_start, int domain_size, int rank,
                   int size);
 int write_values(const t_param params, t_speed* cells, int* obstacles,
                  float* av_vels);
@@ -418,12 +418,12 @@ int collision(int ii, int jj, const t_param params, t_speed* cells,
   return EXIT_SUCCESS;
 }
 
-int halo_exchange(t_speed* cells, int cols, int domain_start, int domain_size,
+int halo_exchange(t_speed* cells, int rows, int domain_start, int domain_size,
                   int rank, int size) {
   t_speed* sendbuf; /* buffer to hold values to send */
   t_speed* recvbuf; /* buffer to hold received values */
 
-  sendbuf = (t_speed*)malloc(sizeof(t_speed*) * cols);
+  sendbuf = (t_speed*)malloc(sizeof(t_speed*) * rows);
 }
 
 float av_velocity(const t_param params, t_speed* cells, int* obstacles) {
