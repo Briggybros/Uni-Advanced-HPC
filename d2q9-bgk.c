@@ -103,8 +103,8 @@ int rebound(int ii, int jj, const t_param params, t_speed* cells,
             t_speed* tmp_cells, int* obstacles);
 int collision(int ii, int jj, const t_param params, t_speed* cells,
               t_speed* tmp_cells, int* obstacles);
-int halo_exchange(t_speed* cells, int rows, int domain_start, int domain_size, int rank,
-                  int size);
+int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
+                  int domain_start, int domain_size, int rank, int size);
 int write_values(const t_param params, t_speed* cells, int* obstacles,
                  float* av_vels);
 
@@ -151,6 +151,8 @@ int main(int argc, char* argv[]) {
   int domain_size;  /* the length of this process's domain */
   int flag;         /* for checking whether MPI_Init() has been called */
   enum bool { FALSE, TRUE }; /* enumerated type: false = 0, true = 1 */
+  t_speed* sendbuf;          /* buffer to hold values to send */
+  t_speed* recvbuf;          /* buffer to hold received values */
 
   /* parse the command line */
   if (argc != 3) {
@@ -187,13 +189,17 @@ int main(int argc, char* argv[]) {
     domain_size += params.ny % size;
   }
 
+  sendbuf = (t_speed*)malloc(sizeof(t_speed*) * params.nx);
+  recvbuf = (t_speed*)malloc(sizeof(t_speed*) * params.nx);
+
   /* iterate for maxIters timesteps */
   gettimeofday(&timstr, NULL);
   tic = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
 
   for (int tt = 0; tt < params.maxIters; tt++) {
     timestep(params, cells, tmp_cells, obstacles, domain_start, domain_size);
-    halo_exchange(cells, params.nx, domain_start, domain_size, rank, size);
+    halo_exchange(cells, sendbuf, recvbuf, params.nx, domain_start, domain_size,
+                  rank, size);
     av_vels[tt] = av_velocity(params, cells, obstacles);
 #ifdef DEBUG
     printf("==timestep: %d==\n", tt);
@@ -418,12 +424,55 @@ int collision(int ii, int jj, const t_param params, t_speed* cells,
   return EXIT_SUCCESS;
 }
 
-int halo_exchange(t_speed* cells, int rows, int domain_start, int domain_size,
-                  int rank, int size) {
-  t_speed* sendbuf; /* buffer to hold values to send */
-  t_speed* recvbuf; /* buffer to hold received values */
+int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
+                  int domain_start, int domain_size, int rank, int size) {
+  if (rank != 0) {
+    for (int ii = 0; ii < width; ++ii)
+      sendbuf[ii] = cells[ii + domain_start * width];
+  }
 
-  sendbuf = (t_speed*)malloc(sizeof(t_speed*) * rows);
+  MPI_Status status;
+
+  if (rank != 0 && rank != size) {
+    MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank - 1, 0, recvbuf, width * 9,
+                 MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD, &status);
+  } else {
+    if (rank == 0) {
+      MPI_Recv(recvbuf, width * 9, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD,
+               &status);
+    } else {
+      MPI_Send(sendbuf, width * 9, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD);
+    }
+  }
+
+  if (rank != size) {
+    for (int ii = 0; ii < width; ++ii)
+      cells[ii + (domain_start + domain_size + 1)] = recvbuf[ii];
+  }
+
+  if (rank != size) {
+    for (int ii = 0; ii < width; ++ii)
+      sendbuf[ii] = cells[ii + (domain_start + domain_size) * width];
+  }
+
+  MPI_Status status;
+
+  if (rank != 0 && rank != size) {
+    MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank + 1, 0, recvbuf, width * 9,
+                 MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD, &status);
+  } else {
+    if (rank == size) {
+      MPI_Recv(recvbuf, width * 9, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD,
+               &status);
+    } else {
+      MPI_Send(sendbuf, width * 9, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD);
+    }
+  }
+
+  if (rank != 0) {
+    for (int ii = 0; ii < width; ++ii)
+      cells[ii + (domain_start - 1)] = recvbuf[ii];
+  }
 }
 
 float av_velocity(const t_param params, t_speed* cells, int* obstacles) {
