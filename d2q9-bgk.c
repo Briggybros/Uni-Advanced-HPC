@@ -455,8 +455,6 @@ int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
       sendbuf[ii] = cells[ii + (domain_start + domain_size) * width];
   }
 
-  MPI_Status status;
-
   if (rank != 0 && rank != size) {
     MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank + 1, 0, recvbuf, width * 9,
                  MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD, &status);
@@ -473,6 +471,8 @@ int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
     for (int ii = 0; ii < width; ++ii)
       cells[ii + (domain_start - 1)] = recvbuf[ii];
   }
+
+  return EXIT_SUCCESS;
 }
 
 float av_velocity(const t_param params, t_speed* cells, int* obstacles) {
