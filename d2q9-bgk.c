@@ -225,7 +225,7 @@ int main(int argc, char* argv[]) {
 
 int timestep(const t_param params, t_speed* cells, t_speed* tmp_cells,
              int* obstacles, int domain_start, int domain_size) {
-  accelerate_flow(params, cells, obstacles domain_start, domain_size);
+  accelerate_flow(params, cells, obstacles, domain_start, domain_size);
   for (int jj = domain_start; jj < domain_size; jj++) {
     for (int ii = 0; ii < params.nx; ii++) {
       propagate(ii, jj, params, cells, tmp_cells);
