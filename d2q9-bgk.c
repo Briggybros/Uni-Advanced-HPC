@@ -188,6 +188,7 @@ int main(int argc, char* argv[]) {
              &av_vels);
 
   stdlog("Readyish");
+  printf("Size: %i\n", size);
 
   /* calculate the size of the domain for this process */
   domain_start = rank * (params.ny / size);
@@ -453,13 +454,16 @@ int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
   stdlog("3");
 
   if (rank != 0 && rank != size) {
+    stdlog("Middle rank");
     MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank - 1, 0, recvbuf, width * 9,
                  MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD, &status);
-  } else {
+  } else if (size != 1) {
     if (rank == 0) {
+      stdlog("Bottom rank");
       MPI_Recv(recvbuf, width * 9, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD,
                &status);
     } else {
+      stdlog("Top rank");
       MPI_Send(sendbuf, width * 9, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD);
     }
   }
