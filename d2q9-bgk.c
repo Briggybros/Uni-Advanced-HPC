@@ -126,6 +126,10 @@ float calc_reynolds(const t_param params, t_speed* cells, int* obstacles);
 void die(const char* message, const int line, const char* file);
 void usage(const char* exe);
 
+void log(int rank, char* message) {
+  printf("%i: %s", rank, message);
+}
+
 /*
 ** main program:
 ** initialise, timestep loop, finalise
@@ -162,15 +166,11 @@ int main(int argc, char* argv[]) {
     obstaclefile = argv[2];
   }
 
-  printf("1\n");
-
   MPI_Init(&argc, &argv);
   MPI_Initialized(&flag);
   if (flag != TRUE) {
     MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
   }
-
-  printf("2\n");
 
   /*
   ** determine the SIZE of the group of processes associated with
@@ -186,7 +186,7 @@ int main(int argc, char* argv[]) {
   initialise(paramfile, obstaclefile, &params, &cells, &tmp_cells, &obstacles,
              &av_vels);
 
-  printf("3\n");
+  log(rank, "Readyish");
 
   /* calculate the size of the domain for this process */
   domain_start = rank * (params.ny / size);
