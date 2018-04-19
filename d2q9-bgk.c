@@ -126,7 +126,9 @@ float calc_reynolds(const t_param params, t_speed* cells, int* obstacles);
 void die(const char* message, const int line, const char* file);
 void usage(const char* exe);
 
-void stdlog(int rank, char* message) {
+int rank;      /* 'rank' of process among it's cohort */
+
+void stdlog(char* message) {
   printf("%i: %s\n", rank, message);
 }
 
@@ -149,7 +151,6 @@ int main(int argc, char* argv[]) {
       toc; /* floating point numbers to calculate elapsed wallclock time */
   double usrtim; /* floating point number to record elapsed user CPU time */
   double systim; /* floating point number to record elapsed system CPU time */
-  int rank;      /* 'rank' of process among it's cohort */
   int size;      /* size of cohort, i.e. num processes started */
   int domain_start; /* the starting y index of this process's domain */
   int domain_size;  /* the length of this process's domain */
@@ -186,7 +187,7 @@ int main(int argc, char* argv[]) {
   initialise(paramfile, obstaclefile, &params, &cells, &tmp_cells, &obstacles,
              &av_vels);
 
-  stdlog(rank, "Readyish");
+  stdlog("Readyish");
 
   /* calculate the size of the domain for this process */
   domain_start = rank * (params.ny / size);
@@ -195,12 +196,12 @@ int main(int argc, char* argv[]) {
     domain_size += params.ny % size;
   }
   
-  stdlog(rank, "Calculated domains");
+  stdlog("Calculated domains");
 
   sendbuf = (t_speed*)malloc(sizeof(t_speed*) * params.nx);
   recvbuf = (t_speed*)malloc(sizeof(t_speed*) * params.nx);
 
-  stdlog(rank, "Allocated halo buffers");
+  stdlog("Allocated halo buffers");
 
   /* iterate for maxIters timesteps */
   gettimeofday(&timstr, NULL);
