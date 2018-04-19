@@ -162,11 +162,15 @@ int main(int argc, char* argv[]) {
     obstaclefile = argv[2];
   }
 
+  printf('1\n');
+
   MPI_Init(&argc, &argv);
   MPI_Initialized(&flag);
   if (flag != TRUE) {
     MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
   }
+
+  printf('2\n');
 
   /*
   ** determine the SIZE of the group of processes associated with
@@ -181,6 +185,8 @@ int main(int argc, char* argv[]) {
   /* initialise our data structures and load values from file */
   initialise(paramfile, obstaclefile, &params, &cells, &tmp_cells, &obstacles,
              &av_vels);
+
+  printf('3\n');
 
   /* calculate the size of the domain for this process */
   domain_start = rank * (params.ny / size);
