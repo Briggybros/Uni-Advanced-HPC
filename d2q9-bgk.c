@@ -126,7 +126,7 @@ float calc_reynolds(const t_param params, t_speed* cells, int* obstacles);
 void die(const char* message, const int line, const char* file);
 void usage(const char* exe);
 
-void log(int rank, char* message) {
+void stdlog(int rank, char* message) {
   printf("%i: %s", rank, message);
 }
 
@@ -186,7 +186,7 @@ int main(int argc, char* argv[]) {
   initialise(paramfile, obstaclefile, &params, &cells, &tmp_cells, &obstacles,
              &av_vels);
 
-  log(rank, "Readyish");
+  stdlog(rank, "Readyish");
 
   /* calculate the size of the domain for this process */
   domain_start = rank * (params.ny / size);
