@@ -208,9 +208,13 @@ int main(int argc, char* argv[]) {
   tic = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
 
   for (int tt = 0; tt < params.maxIters; tt++) {
+    stdlog("Pre-timestep");
     timestep(params, cells, tmp_cells, obstacles, domain_start, domain_size);
+    stdlog("Post-timestep");
+    stdlog("Pre-halo");
     halo_exchange(cells, sendbuf, recvbuf, params.nx, domain_start, domain_size,
                   rank, size);
+    stdlog("Post-halo");
     av_vels[tt] = av_velocity(params, cells, obstacles);
 #ifdef DEBUG
     printf("==timestep: %d==\n", tt);
