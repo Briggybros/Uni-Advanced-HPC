@@ -441,12 +441,16 @@ int collision(int ii, int jj, const t_param params, t_speed* cells,
 
 int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
                   int domain_start, int domain_size, int rank, int size) {
+  stdlog("1");
   if (rank != 0) {
     for (int ii = 0; ii < width; ++ii)
       sendbuf[ii] = cells[ii + domain_start * width];
   }
+  stdlog("2");
 
   MPI_Status status;
+
+  stdlog("3");
 
   if (rank != 0 && rank != size) {
     MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank - 1, 0, recvbuf, width * 9,
@@ -459,16 +463,21 @@ int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
       MPI_Send(sendbuf, width * 9, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD);
     }
   }
+  stdlog("4");
 
   if (rank != size) {
     for (int ii = 0; ii < width; ++ii)
       cells[ii + (domain_start + domain_size + 1)] = recvbuf[ii];
   }
 
+  stdlog("5");
+
   if (rank != size) {
     for (int ii = 0; ii < width; ++ii)
       sendbuf[ii] = cells[ii + (domain_start + domain_size) * width];
   }
+
+  stdlog("6");
 
   if (rank != 0 && rank != size) {
     MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank + 1, 0, recvbuf, width * 9,
@@ -482,10 +491,14 @@ int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
     }
   }
 
+  stdlog("7");
+
   if (rank != 0) {
     for (int ii = 0; ii < width; ++ii)
       cells[ii + (domain_start - 1)] = recvbuf[ii];
   }
+
+  stdlog("8");
 
   return EXIT_SUCCESS;
 }
