@@ -127,7 +127,7 @@ void die(const char* message, const int line, const char* file);
 void usage(const char* exe);
 
 void stdlog(int rank, char* message) {
-  printf("%i: %s", rank, message);
+  printf("%i: %s\n", rank, message);
 }
 
 /*
