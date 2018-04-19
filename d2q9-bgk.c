@@ -194,9 +194,13 @@ int main(int argc, char* argv[]) {
   if (rank == size - 1) {
     domain_size += params.ny % size;
   }
+  
+  stdlog(rank, "Calculated domains");
 
   sendbuf = (t_speed*)malloc(sizeof(t_speed*) * params.nx);
   recvbuf = (t_speed*)malloc(sizeof(t_speed*) * params.nx);
+
+  stdlog(rank, "Allocated halo buffers");
 
   /* iterate for maxIters timesteps */
   gettimeofday(&timstr, NULL);
