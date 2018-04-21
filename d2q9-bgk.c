@@ -452,7 +452,7 @@ int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
 
   stdlog("3");
 
-  if (rank != 0 && rank != size) {
+  if (rank != 0 && rank != size -1) {
     stdlog("Middle rank");
     MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank - 1, 0, recvbuf, width * 9,
                  MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD, &status);
@@ -468,25 +468,25 @@ int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
   }
   stdlog("4");
 
-  if (rank != size) {
+  if (rank != size -1) {
     for (int ii = 0; ii < width; ++ii)
       cells[ii + (domain_start + domain_size + 1)] = recvbuf[ii];
   }
 
   stdlog("5");
 
-  if (rank != size) {
+  if (rank != size -1) {
     for (int ii = 0; ii < width; ++ii)
       sendbuf[ii] = cells[ii + (domain_start + domain_size) * width];
   }
 
   stdlog("6");
 
-  if (rank != 0 && rank != size) {
+  if (rank != 0 && rank != size -1) {
     MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank + 1, 0, recvbuf, width * 9,
                  MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD, &status);
   } else if (size != 1) {
-    if (rank == size) {
+    if (rank == size -1) {
       MPI_Recv(recvbuf, width * 9, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD,
                &status);
     } else {
