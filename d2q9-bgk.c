@@ -713,6 +713,7 @@ int initialise(const char* paramfile, const char* obstaclefile, t_param* params,
 int finalise(const t_param* params, t_speed** cells_ptr,
              t_speed** tmp_cells_ptr, int** obstacles_ptr,
              float** av_vels_ptr) {
+  stdlog("Entered finalise");
   /*
   ** free up allocated memory
   */
