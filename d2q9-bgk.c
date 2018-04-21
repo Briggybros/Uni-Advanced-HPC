@@ -478,13 +478,16 @@ int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
   printf("6\n");
 
   if (rank != 0 && rank != size -1) {
+    printf("Middle rank\n");
     MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank + 1, 0, recvbuf, width * 9,
                  MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD, &status);
   } else if (size != 1) {
     if (rank == size -1) {
+      printf("Top rank\n");
       MPI_Recv(recvbuf, width * 9, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD,
                &status);
     } else {
+      printf("Bottom rank \n");
       MPI_Send(sendbuf, width * 9, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD);
     }
   }
