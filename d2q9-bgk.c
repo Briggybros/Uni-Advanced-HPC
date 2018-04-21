@@ -126,12 +126,6 @@ float calc_reynolds(const t_param params, t_speed* cells, int* obstacles);
 void die(const char* message, const int line, const char* file);
 void usage(const char* exe);
 
-int rank;      /* 'rank' of process among it's cohort */
-
-void stdlog(char* message) {
-  printf("%i: %s\n", rank, message);
-}
-
 /*
 ** main program:
 ** initialise, timestep loop, finalise
@@ -151,6 +145,7 @@ int main(int argc, char* argv[]) {
       toc; /* floating point numbers to calculate elapsed wallclock time */
   double usrtim; /* floating point number to record elapsed user CPU time */
   double systim; /* floating point number to record elapsed system CPU time */
+  int rank;      /* 'rank' of process among it's cohort */
   int size;      /* size of cohort, i.e. num processes started */
   int domain_start; /* the starting y index of this process's domain */
   int domain_size;  /* the length of this process's domain */
