@@ -182,7 +182,7 @@ int main(int argc, char* argv[]) {
   initialise(paramfile, obstaclefile, &params, &cells, &tmp_cells, &obstacles,
              &av_vels);
 
-  stdlog("Readyish");
+  printf("Readyish\n");
 
   /* calculate the size of the domain for this process */
   domain_start = rank * (params.ny / size);
@@ -191,25 +191,25 @@ int main(int argc, char* argv[]) {
     domain_size += params.ny % size;
   }
   
-  stdlog("Calculated domains");
+  printf("Calculated domains\n");
 
   sendbuf = (t_speed*)malloc(sizeof(t_speed*) * params.nx);
   recvbuf = (t_speed*)malloc(sizeof(t_speed*) * params.nx);
 
-  stdlog("Allocated halo buffers");
+  printf("Allocated halo buffers\n");
 
   /* iterate for maxIters timesteps */
   gettimeofday(&timstr, NULL);
   tic = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
 
   for (int tt = 0; tt < params.maxIters; tt++) {
-    stdlog("Pre-timestep");
+    printf("Pre-timestep\n");
     timestep(params, cells, tmp_cells, obstacles, domain_start, domain_size);
-    stdlog("Post-timestep");
-    stdlog("Pre-halo");
+    printf("Post-timestep\n");
+    printf("Pre-halo\n");
     halo_exchange(cells, sendbuf, recvbuf, params.nx, domain_start, domain_size,
                   rank, size);
-    stdlog("Post-halo");
+    printf("Post-halo\n");
     av_vels[tt] = av_velocity(params, cells, obstacles);
 #ifdef DEBUG
     printf("==timestep: %d==\n", tt);
@@ -436,46 +436,46 @@ int collision(int ii, int jj, const t_param params, t_speed* cells,
 
 int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
                   int domain_start, int domain_size, int rank, int size) {
-  stdlog("1");
+  printf("1\n");
   if (rank != 0) {
     for (int ii = 0; ii < width; ++ii)
       sendbuf[ii] = cells[ii + domain_start * width];
   }
-  stdlog("2");
+  printf("2\n");
 
   MPI_Status status;
 
-  stdlog("3");
+  printf("3\n");
 
   if (rank != 0 && rank != size -1) {
-    stdlog("Middle rank");
+    printf("Middle rank\n");
     MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank - 1, 0, recvbuf, width * 9,
                  MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD, &status);
   } else if (size != 1) {
     if (rank == 0) {
-      stdlog("Bottom rank");
+      printf("Bottom rank\n");
       MPI_Recv(recvbuf, width * 9, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD,
                &status);
     } else {
-      stdlog("Top rank");
+      printf("Top rank\n");
       MPI_Send(sendbuf, width * 9, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD);
     }
   }
-  stdlog("4");
+  printf("4\n");
 
   if (rank != size -1) {
     for (int ii = 0; ii < width; ++ii)
       cells[ii + (domain_start + domain_size + 1)] = recvbuf[ii];
   }
 
-  stdlog("5");
+  printf("5\n");
 
   if (rank != size -1) {
     for (int ii = 0; ii < width; ++ii)
       sendbuf[ii] = cells[ii + (domain_start + domain_size) * width];
   }
 
-  stdlog("6");
+  printf("6\n");
 
   if (rank != 0 && rank != size -1) {
     MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank + 1, 0, recvbuf, width * 9,
@@ -489,14 +489,14 @@ int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
     }
   }
 
-  stdlog("7");
+  printf("7\n");
 
   if (rank != 0) {
     for (int ii = 0; ii < width; ++ii)
       cells[ii + (domain_start - 1)] = recvbuf[ii];
   }
 
-  stdlog("8");
+  printf("8\n");
 
   return EXIT_SUCCESS;
 }
@@ -708,7 +708,7 @@ int initialise(const char* paramfile, const char* obstaclefile, t_param* params,
 int finalise(const t_param* params, t_speed** cells_ptr,
              t_speed** tmp_cells_ptr, int** obstacles_ptr,
              float** av_vels_ptr) {
-  stdlog("Entered finalise");
+  printf("Entered finalise");
   /*
   ** free up allocated memory
   */
