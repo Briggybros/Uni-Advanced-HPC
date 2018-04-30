@@ -117,7 +117,8 @@ int finalise(const t_param* params, t_speed** cells_ptr,
 float total_density(const t_param params, t_speed* cells);
 
 /* compute average velocity */
-float av_velocity(const t_param params, t_speed* cells, int* obstacles);
+float av_velocity(const t_param params, t_speed* cells, int* obstacles,
+                  int rank, int domain_start, int domain_size);
 
 /* calculate Reynolds number */
 float calc_reynolds(const t_param params, t_speed* cells, int* obstacles);
@@ -190,7 +191,7 @@ int main(int argc, char* argv[]) {
   if (rank == size - 1) {
     domain_size += params.ny % size;
   }
-  
+
   printf("Calculated domains\n");
 
   sendbuf = (t_speed*)malloc(sizeof(t_speed*) * params.nx);
@@ -210,7 +211,8 @@ int main(int argc, char* argv[]) {
     halo_exchange(cells, sendbuf, recvbuf, params.nx, domain_start, domain_size,
                   rank, size);
     printf("Post-halo\n");
-    av_vels[tt] = av_velocity(params, cells, obstacles);
+    av_vels[tt] =
+        av_velocity(params, cells, obstacles, rank, domain_start, domain_size);
 #ifdef DEBUG
     printf("==timestep: %d==\n", tt);
     printf("av velocity: %.12E\n", av_vels[tt]);
@@ -447,7 +449,7 @@ int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
 
   printf("3\n");
 
-  if (rank != 0 && rank != size -1) {
+  if (rank != 0 && rank != size - 1) {
     printf("Middle rank\n");
     MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank - 1, 0, recvbuf, width * 9,
                  MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD, &status);
@@ -463,26 +465,26 @@ int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
   }
   printf("4\n");
 
-  if (rank != size -1) {
+  if (rank != size - 1) {
     for (int ii = 0; ii < width; ++ii)
       cells[ii + (domain_start + domain_size + 1)] = recvbuf[ii];
   }
 
   printf("5\n");
 
-  if (rank != size -1) {
+  if (rank != size - 1) {
     for (int ii = 0; ii < width; ++ii)
       sendbuf[ii] = cells[ii + (domain_start + domain_size) * width];
   }
 
   printf("6\n");
 
-  if (rank != 0 && rank != size -1) {
+  if (rank != 0 && rank != size - 1) {
     printf("Middle rank\n");
     MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank + 1, 0, recvbuf, width * 9,
                  MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD, &status);
   } else if (size != 1) {
-    if (rank == size -1) {
+    if (rank == size - 1) {
       printf("Top rank\n");
       MPI_Recv(recvbuf, width * 9, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD,
                &status);
@@ -504,7 +506,8 @@ int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
   return EXIT_SUCCESS;
 }
 
-float av_velocity(const t_param params, t_speed* cells, int* obstacles) {
+float av_velocity(const t_param params, t_speed* cells, int* obstacles,
+                  int rank, int domain_start, int domain_size) {
   int tot_cells = 0; /* no. of cells used in calculation */
   float tot_u;       /* accumulated magnitudes of velocity for each cell */
 
@@ -512,7 +515,7 @@ float av_velocity(const t_param params, t_speed* cells, int* obstacles) {
   tot_u = 0.f;
 
   /* loop over all non-blocked cells */
-  for (int jj = 0; jj < params.ny; jj++) {
+  for (int jj = domain_start; jj < domain_start + domain_size; jj++) {
     for (int ii = 0; ii < params.nx; ii++) {
       /* ignore occupied cells */
       if (!obstacles[ii + jj * params.nx]) {
@@ -547,7 +550,19 @@ float av_velocity(const t_param params, t_speed* cells, int* obstacles) {
     }
   }
 
-  return tot_u / (float)tot_cells;
+  float *sendbuf = malloc(2*sizeof(float));
+  float *recvbuf = malloc(2*sizeof(float));
+
+  sendbuf[0] = tot_u;
+  sendbuf[1] = (float)tot_cells;
+
+  MPI_Reduce(sendbuf, recvbuf, 2, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+
+  if (rank = 0) {
+    return recvbuf[0] / recvbuf[1];
+  } else {
+    return tot_u / (float)tot_cells;
+  }
 }
 
 int initialise(const char* paramfile, const char* obstaclefile, t_param* params,
