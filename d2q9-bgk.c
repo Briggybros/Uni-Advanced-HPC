@@ -121,10 +121,10 @@ float total_density(const t_param params, t_speed* cells);
 
 /* compute average velocity */
 float av_velocity(const t_param params, t_speed* cells, int* obstacles,
-                  int rank, int domain_start, int domain_size);
+                  int rank, int domain_start, int domain_size, int sync);
 
 /* calculate Reynolds number */
-float calc_reynolds(const t_param params, t_speed* cells, int* obstacles);
+float calc_reynolds(const t_param params, t_speed* cells, int* obstacles, int height);
 
 /* utility functions */
 void die(const char* message, const int line, const char* file);
@@ -215,7 +215,7 @@ int main(int argc, char* argv[]) {
                   rank, size);
     printf("Post-halo\n");
     av_vels[tt] =
-        av_velocity(params, cells, obstacles, rank, domain_start, domain_size);
+        av_velocity(params, cells, obstacles, rank, domain_start, domain_size, 1);
 #ifdef DEBUG
     printf("==timestep: %d==\n", tt);
     printf("av velocity: %.12E\n", av_vels[tt]);
@@ -223,7 +223,7 @@ int main(int argc, char* argv[]) {
 #endif
   }
 
-  // TODO Sync entire grid back to 0
+  sync_grid(cells, rank, domain_start, domain_size, params.ny, params.nx, size);
 
   gettimeofday(&timstr, NULL);
   toc = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
@@ -236,7 +236,7 @@ int main(int argc, char* argv[]) {
   /* write final values and free memory */
   printf("==done==\n");
   printf("Reynolds number:\t\t%.12E\n",
-         calc_reynolds(params, cells, obstacles));
+         calc_reynolds(params, cells, obstacles, params.ny));
   printf("Elapsed time:\t\t\t%.6lf (s)\n", toc - tic);
   printf("Elapsed user CPU time:\t\t%.6lf (s)\n", usrtim);
   printf("Elapsed system CPU time:\t%.6lf (s)\n", systim);
@@ -493,7 +493,7 @@ int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
 }
 
 float av_velocity(const t_param params, t_speed* cells, int* obstacles,
-                  int rank, int domain_start, int domain_size) {
+                  int rank, int domain_start, int domain_size, int sync) {
   int tot_cells = 0; /* no. of cells used in calculation */
   float tot_u;       /* accumulated magnitudes of velocity for each cell */
 
@@ -536,6 +536,8 @@ float av_velocity(const t_param params, t_speed* cells, int* obstacles,
     }
   }
 
+  if (sync == 1) {
+
   float* sendbuf = malloc(2 * sizeof(float));
   float* recvbuf = malloc(2 * sizeof(float));
 
@@ -552,6 +554,9 @@ float av_velocity(const t_param params, t_speed* cells, int* obstacles,
   } else {
     free(recvbuf);
     free(sendbuf);
+    return tot_u / (float)tot_cells;
+  }
+  } else {
     return tot_u / (float)tot_cells;
   }
 }
@@ -578,7 +583,7 @@ int sync_grid(t_speed* cells, int rank, int domain_start, int domain_size,
       if (i == ranks - 1) {
         rank_size += rows % ranks;
       }
-      
+
       t_speed* recv = malloc(columns * (rank_size - 1) * 9 * sizeof(float));
 
       MPI_Recv(recv, columns * (rank_size - 1) * 9, MPI_FLOAT, i, 0,
@@ -777,10 +782,10 @@ int finalise(const t_param* params, t_speed** cells_ptr,
   return EXIT_SUCCESS;
 }
 
-float calc_reynolds(const t_param params, t_speed* cells, int* obstacles) {
+float calc_reynolds(const t_param params, t_speed* cells, int* obstacles, int height) {
   const float viscosity = 1.f / 6.f * (2.f / params.omega - 1.f);
 
-  return av_velocity(params, cells, obstacles) * params.reynolds_dim /
+  return av_velocity(params, cells, obstacles, 0, 0, height, 0) * params.reynolds_dim /
          viscosity;
 }
 
