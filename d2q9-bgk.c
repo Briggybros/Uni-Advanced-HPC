@@ -103,7 +103,7 @@ int rebound(int ii, int jj, const t_param params, t_speed* cells,
             t_speed* tmp_cells, int* obstacles);
 int collision(int ii, int jj, const t_param params, t_speed* cells,
               t_speed* tmp_cells, int* obstacles);
-int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
+int halo_exchange(t_speed* cells, float* sendbuf, float* recvbuf, int width,
                   int domain_start, int domain_size, int rank, int size);
 int write_values(const t_param params, t_speed* cells, int* obstacles,
                  float* av_vels);
@@ -124,7 +124,8 @@ float av_velocity(const t_param params, t_speed* cells, int* obstacles,
                   int rank, int domain_start, int domain_size, int sync);
 
 /* calculate Reynolds number */
-float calc_reynolds(const t_param params, t_speed* cells, int* obstacles, int height);
+float calc_reynolds(const t_param params, t_speed* cells, int* obstacles,
+                    int height);
 
 /* utility functions */
 void die(const char* message, const int line, const char* file);
@@ -155,8 +156,8 @@ int main(int argc, char* argv[]) {
   int domain_size;  /* the length of this process's domain */
   int flag;         /* for checking whether MPI_Init() has been called */
   enum bool { FALSE, TRUE }; /* enumerated type: false = 0, true = 1 */
-  t_speed* sendbuf;          /* buffer to hold values to send */
-  t_speed* recvbuf;          /* buffer to hold received values */
+  float* sendbuf;            /* buffer to hold values to send */
+  float* recvbuf;            /* buffer to hold received values */
 
   /* parse the command line */
   if (argc != 3) {
@@ -195,10 +196,10 @@ int main(int argc, char* argv[]) {
     domain_size += params.ny % size;
   }
 
-  printf("Calculated domains\n");
+  printf("domain: [%i, %i]\n", domain_start, domain_start + domain_size - 1);
 
-  sendbuf = (t_speed*)malloc(sizeof(t_speed*) * params.nx);
-  recvbuf = (t_speed*)malloc(sizeof(t_speed*) * params.nx);
+  sendbuf = malloc(sizeof(float) * 9 * params.nx);
+  recvbuf = malloc(sizeof(float) * 9 * params.nx);
 
   printf("Allocated halo buffers\n");
 
@@ -207,15 +208,11 @@ int main(int argc, char* argv[]) {
   tic = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
 
   for (int tt = 0; tt < params.maxIters; tt++) {
-    printf("Pre-timestep\n");
     timestep(params, cells, tmp_cells, obstacles, domain_start, domain_size);
-    printf("Post-timestep\n");
-    printf("Pre-halo\n");
     halo_exchange(cells, sendbuf, recvbuf, params.nx, domain_start, domain_size,
                   rank, size);
-    printf("Post-halo\n");
-    av_vels[tt] =
-        av_velocity(params, cells, obstacles, rank, domain_start, domain_size, 1);
+    av_vels[tt] = av_velocity(params, cells, obstacles, rank, domain_start,
+                              domain_size, 1);
 #ifdef DEBUG
     printf("==timestep: %d==\n", tt);
     printf("av velocity: %.12E\n", av_vels[tt]);
@@ -441,11 +438,14 @@ int collision(int ii, int jj, const t_param params, t_speed* cells,
   return EXIT_SUCCESS;
 }
 
-int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
+int halo_exchange(t_speed* cells, float* sendbuf, float* recvbuf, int width,
                   int domain_start, int domain_size, int rank, int size) {
   if (rank != 0) {
-    for (int ii = 0; ii < width; ++ii)
-      sendbuf[ii] = cells[ii + (domain_start)*width];
+    for (int ii = 0; ii < width; ++ii) {
+      for (int jj = 0; jj < 9; ++jj) {
+        sendbuf[ii * 9 + jj] = cells[ii + (domain_start)*width].speeds[jj];
+      }
+    }
   }
 
   MPI_Status status;
@@ -463,30 +463,42 @@ int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
   }
 
   if (rank != size - 1) {
-    for (int ii = 0; ii < width; ++ii)
-      cells[ii + (domain_start + domain_size) * width] = recvbuf[ii];
+    for (int ii = 0; ii < width; ++ii) {
+      for (int jj = 0; jj < 9; ++jj) {
+        cells[ii + (domain_start + domain_size) * width].speeds[jj] =
+            recvbuf[ii * 9 + jj];
+      }
+    }
   }
 
   if (rank != size - 1) {
-    for (int ii = 0; ii < width; ++ii)
-      sendbuf[ii] = cells[ii + ((domain_start + domain_size) - 1) * width];
+    for (int ii = 0; ii < width; ++ii) {
+      for (int jj = 0; jj < 9; ++jj) {
+        sendbuf[ii] =
+            cells[ii + ((domain_start + domain_size) - 1) * width].speeds[jj];
+      }
+    }
   }
 
   if (rank != 0 && rank != size - 1) {
-    MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank + 1, 0, recvbuf, width * 9,
-                 MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD, &status);
+    MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank + 1, 1, recvbuf, width * 9,
+                 MPI_FLOAT, rank - 1, 1, MPI_COMM_WORLD, &status);
   } else if (size != 1) {
     if (rank == size - 1) {
-      MPI_Recv(recvbuf, width * 9, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD,
+      MPI_Recv(recvbuf, width * 9, MPI_FLOAT, rank - 1, 1, MPI_COMM_WORLD,
                &status);
     } else {
-      MPI_Send(sendbuf, width * 9, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD);
+      MPI_Send(sendbuf, width * 9, MPI_FLOAT, rank + 1, 1, MPI_COMM_WORLD);
     }
   }
 
   if (rank != 0) {
-    for (int ii = 0; ii < width; ++ii)
-      cells[ii + (domain_start - 1) * width] = recvbuf[ii];
+    for (int ii = 0; ii < width; ++ii) {
+      for (int jj = 0; jj < 9; ++jj) {
+        cells[ii + (domain_start - 1) * width].speeds[jj] =
+            recvbuf[ii * 9 + jj];
+      }
+    }
   }
 
   return EXIT_SUCCESS;
@@ -528,6 +540,7 @@ float av_velocity(const t_param params, t_speed* cells, int* obstacles,
                       cells[ii + jj * params.nx].speeds[7] +
                       cells[ii + jj * params.nx].speeds[8])) /
                     local_density;
+
         /* accumulate the norm of x- and y- velocity components */
         tot_u += sqrtf((u_x * u_x) + (u_y * u_y));
         /* increase counter of inspected cells */
@@ -537,25 +550,20 @@ float av_velocity(const t_param params, t_speed* cells, int* obstacles,
   }
 
   if (sync == 1) {
+    float sendbuf[2];
+    float recvbuf[2];
 
-  float* sendbuf = malloc(2 * sizeof(float));
-  float* recvbuf = malloc(2 * sizeof(float));
+    sendbuf[0] = tot_u;
+    sendbuf[1] = (float)tot_cells;
 
-  sendbuf[0] = tot_u;
-  sendbuf[1] = (float)tot_cells;
+    MPI_Reduce(&sendbuf, &recvbuf, 2, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
 
-  MPI_Reduce(sendbuf, recvbuf, 2, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
-
-  if (rank = 0) {
-    float result = recvbuf[0] / recvbuf[1];
-    free(recvbuf);
-    free(sendbuf);
-    return result;
-  } else {
-    free(recvbuf);
-    free(sendbuf);
-    return tot_u / (float)tot_cells;
-  }
+    if (rank == 0) {
+      float result = recvbuf[0] / recvbuf[1];
+      return result;
+    } else {
+      return tot_u / (float)tot_cells;
+    }
   } else {
     return tot_u / (float)tot_cells;
   }
@@ -563,40 +571,59 @@ float av_velocity(const t_param params, t_speed* cells, int* obstacles,
 
 int sync_grid(t_speed* cells, int rank, int domain_start, int domain_size,
               int rows, int columns, int ranks) {
+  printf("syncing\n");
   if (rank > 0) {
-    t_speed* send = malloc(columns * (domain_size - 1) * 9 * sizeof(float));
+    float* send = malloc(columns * (domain_size - 1) * 9 * sizeof(float));
 
-    for (int jj = domain_start; jj < domain_start + domain_size; ++jj) {
+    printf("filling send buffer\n");
+    for (int jj = 0; jj < domain_size; ++jj) {
       for (int ii = 0; ii < columns; ++ii) {
-        send[ii + columns * jj] = cells[ii + columns * jj];
+        int index = ii + columns * jj;
+        for (int kk = 0; kk < 9; ++kk) {
+          printf("Setting (%i, %i) to %i\n", ii, jj, kk);
+          printf("index is: %i\n", index);
+          send[index * 9 + kk] = cells[ii + columns * (jj + domain_size)].speeds[kk];
+        }
       }
     }
+    printf("send buffer filled\n");
 
-    MPI_Send(send, columns * (domain_size - 1) * 9, MPI_FLOAT, 0, 0,
+    MPI_Send(send, columns * (domain_size - 1) * 9, MPI_FLOAT, 0, 2,
              MPI_COMM_WORLD);
     free(send);
   } else {
     MPI_Status status;
     for (int i = 1; i < ranks; ++i) {
+      printf("Recieving from %i\n", i);
       int rank_start = i * (rows / ranks);
       int rank_size = rows / ranks;
       if (i == ranks - 1) {
         rank_size += rows % ranks;
       }
 
-      t_speed* recv = malloc(columns * (rank_size - 1) * 9 * sizeof(float));
+      float* recv = malloc(columns * (rank_size - 1) * 9 * sizeof(float));
 
-      MPI_Recv(recv, columns * (rank_size - 1) * 9, MPI_FLOAT, i, 0,
+      printf("Waiting to recieve\n");
+      MPI_Recv(recv, columns * (rank_size - 1) * 9, MPI_FLOAT, i, 2,
                MPI_COMM_WORLD, &status);
 
-      for (int jj = rank_start; jj < rank_start + rank_size; ++jj) {
+      printf("Restructuring cells\n");
+
+      for (int jj = 0; jj < rank_size; ++jj) {
         for (int ii = 0; ii < columns; ++ii) {
-          cells[ii + columns * jj] = recv[ii];
+          int index = ii + columns * jj;
+          for (int kk = 0; kk < 9; ++kk) {
+            cells[ii + columns * (jj + rank_start)].speeds[kk] = recv[index * 9 + kk];
+          }
         }
       }
-    free(recv);
+      free(recv);
     }
   }
+
+  printf("syncing finished\n");
+
+  return EXIT_SUCCESS;
 }
 
 int initialise(const char* paramfile, const char* obstaclefile, t_param* params,
@@ -782,11 +809,12 @@ int finalise(const t_param* params, t_speed** cells_ptr,
   return EXIT_SUCCESS;
 }
 
-float calc_reynolds(const t_param params, t_speed* cells, int* obstacles, int height) {
+float calc_reynolds(const t_param params, t_speed* cells, int* obstacles,
+                    int height) {
   const float viscosity = 1.f / 6.f * (2.f / params.omega - 1.f);
 
-  return av_velocity(params, cells, obstacles, 0, 0, height, 0) * params.reynolds_dim /
-         viscosity;
+  return av_velocity(params, cells, obstacles, 0, 0, height, 0) *
+         params.reynolds_dim / viscosity;
 }
 
 float total_density(const t_param params, t_speed* cells) {
