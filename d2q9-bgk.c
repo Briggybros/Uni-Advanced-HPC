@@ -108,6 +108,9 @@ int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
 int write_values(const t_param params, t_speed* cells, int* obstacles,
                  float* av_vels);
 
+int sync_grid(t_speed* cells, int rank, int domain_start, int domain_size,
+              int rows, int columns, int ranks);
+
 /* finalise, including freeing up allocated memory */
 int finalise(const t_param* params, t_speed** cells_ptr,
              t_speed** tmp_cells_ptr, int** obstacles_ptr, float** av_vels_ptr);
@@ -187,7 +190,7 @@ int main(int argc, char* argv[]) {
 
   /* calculate the size of the domain for this process */
   domain_start = rank * (params.ny / size);
-  domain_size = (rank + 1) * (params.ny / size);
+  domain_size = params.ny / size;
   if (rank == size - 1) {
     domain_size += params.ny % size;
   }
@@ -219,6 +222,8 @@ int main(int argc, char* argv[]) {
     printf("tot density: %.12E\n", total_density(params, cells));
 #endif
   }
+
+  // TODO Sync entire grid back to 0
 
   gettimeofday(&timstr, NULL);
   toc = timstr.tv_sec + (timstr.tv_usec / 1000000.0);
@@ -438,70 +443,51 @@ int collision(int ii, int jj, const t_param params, t_speed* cells,
 
 int halo_exchange(t_speed* cells, t_speed* sendbuf, t_speed* recvbuf, int width,
                   int domain_start, int domain_size, int rank, int size) {
-  printf("1\n");
   if (rank != 0) {
     for (int ii = 0; ii < width; ++ii)
-      sendbuf[ii] = cells[ii + domain_start * width];
+      sendbuf[ii] = cells[ii + (domain_start)*width];
   }
-  printf("2\n");
 
   MPI_Status status;
 
-  printf("3\n");
-
   if (rank != 0 && rank != size - 1) {
-    printf("Middle rank\n");
     MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank - 1, 0, recvbuf, width * 9,
                  MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD, &status);
   } else if (size != 1) {
     if (rank == 0) {
-      printf("Bottom rank\n");
       MPI_Recv(recvbuf, width * 9, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD,
                &status);
     } else {
-      printf("Top rank\n");
       MPI_Send(sendbuf, width * 9, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD);
     }
   }
-  printf("4\n");
 
   if (rank != size - 1) {
     for (int ii = 0; ii < width; ++ii)
-      cells[ii + (domain_start + domain_size + 1)] = recvbuf[ii];
+      cells[ii + (domain_start + domain_size) * width] = recvbuf[ii];
   }
-
-  printf("5\n");
 
   if (rank != size - 1) {
     for (int ii = 0; ii < width; ++ii)
-      sendbuf[ii] = cells[ii + (domain_start + domain_size) * width];
+      sendbuf[ii] = cells[ii + ((domain_start + domain_size) - 1) * width];
   }
-
-  printf("6\n");
 
   if (rank != 0 && rank != size - 1) {
-    printf("Middle rank\n");
     MPI_Sendrecv(sendbuf, width * 9, MPI_FLOAT, rank + 1, 0, recvbuf, width * 9,
                  MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD, &status);
   } else if (size != 1) {
     if (rank == size - 1) {
-      printf("Top rank\n");
       MPI_Recv(recvbuf, width * 9, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD,
                &status);
     } else {
-      printf("Bottom rank \n");
       MPI_Send(sendbuf, width * 9, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD);
     }
   }
 
-  printf("7\n");
-
   if (rank != 0) {
     for (int ii = 0; ii < width; ++ii)
-      cells[ii + (domain_start - 1)] = recvbuf[ii];
+      cells[ii + (domain_start - 1) * width] = recvbuf[ii];
   }
-
-  printf("8\n");
 
   return EXIT_SUCCESS;
 }
@@ -550,8 +536,8 @@ float av_velocity(const t_param params, t_speed* cells, int* obstacles,
     }
   }
 
-  float *sendbuf = malloc(2*sizeof(float));
-  float *recvbuf = malloc(2*sizeof(float));
+  float* sendbuf = malloc(2 * sizeof(float));
+  float* recvbuf = malloc(2 * sizeof(float));
 
   sendbuf[0] = tot_u;
   sendbuf[1] = (float)tot_cells;
@@ -559,9 +545,52 @@ float av_velocity(const t_param params, t_speed* cells, int* obstacles,
   MPI_Reduce(sendbuf, recvbuf, 2, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
 
   if (rank = 0) {
-    return recvbuf[0] / recvbuf[1];
+    float result = recvbuf[0] / recvbuf[1];
+    free(recvbuf);
+    free(sendbuf);
+    return result;
   } else {
+    free(recvbuf);
+    free(sendbuf);
     return tot_u / (float)tot_cells;
+  }
+}
+
+int sync_grid(t_speed* cells, int rank, int domain_start, int domain_size,
+              int rows, int columns, int ranks) {
+  if (rank > 0) {
+    t_speed* send = malloc(columns * (domain_size - 1) * 9 * sizeof(float));
+
+    for (int jj = domain_start; jj < domain_start + domain_size; ++jj) {
+      for (int ii = 0; ii < columns; ++ii) {
+        send[ii + columns * jj] = cells[ii + columns * jj];
+      }
+    }
+
+    MPI_Send(send, columns * (domain_size - 1) * 9, MPI_FLOAT, 0, 0,
+             MPI_COMM_WORLD);
+    free(send);
+  } else {
+    MPI_Status status;
+    for (int i = 1; i < ranks; ++i) {
+      int rank_start = i * (rows / ranks);
+      int rank_size = rows / ranks;
+      if (i == ranks - 1) {
+        rank_size += rows % ranks;
+      }
+      
+      t_speed* recv = malloc(columns * (rank_size - 1) * 9 * sizeof(float));
+
+      MPI_Recv(recv, columns * (rank_size - 1) * 9, MPI_FLOAT, i, 0,
+               MPI_COMM_WORLD, &status);
+
+      for (int jj = rank_start; jj < rank_start + rank_size; ++jj) {
+        for (int ii = 0; ii < columns; ++ii) {
+          cells[ii + columns * jj] = recv[ii];
+        }
+      }
+    free(recv);
+    }
   }
 }
 
