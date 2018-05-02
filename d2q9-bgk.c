@@ -64,6 +64,8 @@
 #define FINALSTATEFILE "final_state.dat"
 #define AVVELSFILE "av_vels.dat"
 
+// #define DEBUG
+
 /* struct to hold the parameter values */
 typedef struct {
   int nx;           /* no. of cells in x-direction */
@@ -95,10 +97,7 @@ int initialise(const char* paramfile, const char* obstaclefile, t_param* params,
 ** timestep calls, in order, the functions:
 ** accelerate_flow(), propagate(), rebound() & collision()
 */
-int timestep(const t_param params, t_speed* cells, t_speed* tmp_cells,
-             int* obstacles, int domain_start, int domain_size);
-int accelerate_flow(const t_param params, t_speed* cells, int* obstacles,
-                    int domain_start, int domain_size);
+int accelerate_flow(const t_param params, t_speed* cells, int* obstacles);
 int propagate(int ii, int jj, const t_param params, t_speed* cells,
               t_speed* tmp_cells);
 int rebound(int ii, int jj, const t_param params, t_speed* cells,
@@ -191,18 +190,20 @@ int main(int argc, char* argv[]) {
              &av_vels);
 
   /* calculate the size of the domain for this process */
-  domain_start = rank * (params.ny / size);
-  domain_size = params.ny / size;
-  if (rank == size - 1) {
-    domain_size += params.ny % size;
-  }
+  domain_start = 0;
+  domain_size = 0;
 
-  printf("domain: [%i, %i]\n", domain_start, domain_start + domain_size - 1);
+  for (int i = 0; i < params.ny; ++i) {
+    if (i % size == rank) {
+      domain_size++;
+    }
+    if (i % size < rank) {
+      domain_start++;
+    }
+  }
 
   sendbuf = malloc(sizeof(float) * NSPEEDS * params.nx);
   recvbuf = malloc(sizeof(float) * NSPEEDS * params.nx);
-
-  printf("Allocated halo buffers\n");
 
   /* iterate for maxIters timesteps */
   gettimeofday(&timstr, NULL);
@@ -210,14 +211,20 @@ int main(int argc, char* argv[]) {
 
   for (int tt = 0; tt < params.maxIters; tt++) {
     if (rank == size - 1) {
-      accelerate_flow(params, cells, obstacles, domain_start, domain_size);
+      accelerate_flow(params, cells, obstacles);
     }
+
     halo_exchange(cells, sendbuf, recvbuf, params.nx, params.ny, domain_start,
                   domain_size, rank, size);
+
     for (int jj = domain_start; jj < domain_start + domain_size; ++jj) {
       for (int ii = 0; ii < params.nx; ++ii) {
         propagate(ii, jj, params, cells, tmp_cells);
         rebound(ii, jj, params, cells, tmp_cells, obstacles);
+      }
+    }
+    for (int jj = domain_start; jj < domain_start + domain_size; ++jj) {
+      for (int ii = 0; ii < params.nx; ++ii) {
         collision(ii, jj, params, cells, tmp_cells, obstacles);
       }
     }
@@ -258,14 +265,13 @@ int main(int argc, char* argv[]) {
   return EXIT_SUCCESS;
 }
 
-int accelerate_flow(const t_param params, t_speed* cells, int* obstacles,
-                    int domain_start, int domain_size) {
+int accelerate_flow(const t_param params, t_speed* cells, int* obstacles) {
   /* compute weighting factors */
   float w1 = params.density * params.accel / 9.f;
   float w2 = params.density * params.accel / 36.f;
 
   /* modify the 2nd row of the grid */
-  int jj = (domain_start + domain_size) - 2;
+  int jj = params.ny - 2;
 
   for (int ii = 0; ii < params.nx; ii++) {
     /* if the cell is not occupied and
@@ -290,7 +296,6 @@ int accelerate_flow(const t_param params, t_speed* cells, int* obstacles,
 
 int propagate(int ii, int jj, const t_param params, t_speed* cells,
               t_speed* tmp_cells) {
-  /* loop over _all_ cells */
   /* determine indices of axis-direction neighbours
   ** respecting periodic boundary conditions (wrap around) */
   int y_n = (jj + 1) % params.ny;
@@ -437,7 +442,6 @@ int collision(int ii, int jj, const t_param params, t_speed* cells,
 
   return EXIT_SUCCESS;
 }
-
 void SendRecv(t_speed* cells, float* sendbuf, float* recvbuf, int to, int from,
               int sendRow, int receiveRow, int id, int width) {
   MPI_Status status;
@@ -546,11 +550,9 @@ float av_velocity(const t_param params, t_speed* cells, int* obstacles,
 
 int sync_grid(t_speed* cells, int rank, int domain_start, int domain_size,
               int rows, int columns, int ranks) {
-  printf("syncing\n");
   if (rank != MASTER) {
     float* send = malloc(columns * domain_size * NSPEEDS * sizeof(float));
 
-    printf("filling send buffer\n");
     for (int jj = 0; jj < domain_size; ++jj) {
       for (int ii = 0; ii < columns; ++ii) {
         for (int kk = 0; kk < NSPEEDS; ++kk) {
@@ -559,7 +561,6 @@ int sync_grid(t_speed* cells, int rank, int domain_start, int domain_size,
         }
       }
     }
-    printf("send buffer filled\n");
 
     MPI_Send(send, columns * domain_size * NSPEEDS, MPI_FLOAT, MASTER, 2,
              MPI_COMM_WORLD);
@@ -568,20 +569,22 @@ int sync_grid(t_speed* cells, int rank, int domain_start, int domain_size,
     MPI_Status status;
     for (int i = 0; i < ranks; ++i) {
       if (i == MASTER) continue;
-      printf("Recieving from %i\n", i);
-      int rank_start = i * (rows / ranks);
-      int rank_size = rows / ranks;
-      if (i == ranks - 1) {
-        rank_size += rows % ranks;
+      int rank_start = 0;
+      int rank_size = 0;
+
+      for (int j = 0; j < rows; ++j) {
+        if (j % ranks == i) {
+          rank_size++;
+        }
+        if (j % ranks < i) {
+          rank_start++;
+        }
       }
 
       float* recv = malloc(columns * rank_size * NSPEEDS * sizeof(float));
 
-      printf("Waiting to recieve\n");
       MPI_Recv(recv, columns * rank_size * NSPEEDS, MPI_FLOAT, i, 2,
                MPI_COMM_WORLD, &status);
-
-      printf("Restructuring cells\n");
 
       for (int jj = 0; jj < rank_size; ++jj) {
         for (int ii = 0; ii < columns; ++ii) {
@@ -591,13 +594,9 @@ int sync_grid(t_speed* cells, int rank, int domain_start, int domain_size,
           }
         }
       }
-
-      printf("Restructed cells\n");
       free(recv);
     }
   }
-
-  printf("syncing finished\n");
 
   return EXIT_SUCCESS;
 }
@@ -763,7 +762,6 @@ int initialise(const char* paramfile, const char* obstaclefile, t_param* params,
 int finalise(const t_param* params, t_speed** cells_ptr,
              t_speed** tmp_cells_ptr, int** obstacles_ptr,
              float** av_vels_ptr) {
-  printf("Entered finalise\n");
   /*
   ** free up allocated memory
   */
